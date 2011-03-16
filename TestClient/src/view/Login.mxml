@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:Canvas xmlns:mx="http://www.adobe.com/2006/mxml" width="800" height="600" 
+		   creationComplete="login_creationCompleteHandler(event)">
+
+	<mx:Script>
+		<![CDATA[
+			/*
+			UI элемент для авторизации пользователя 
+			*/
+			
+			import buisness.Services;
+			import buisness.events.ServiceEvent;
+			import mx.events.FlexEvent;
+			
+			// ------------------
+			public static var instance:Login;
+			// ------------------
+			protected function login_creationCompleteHandler(event:FlexEvent):void
+			{
+				instance=this;
+				Services.instance.addEventListener(ServiceEvent.LOGIN_SUCCESS, onLoginSuccess);
+				Services.instance.addEventListener(ServiceEvent.LOGIN_FAULT, onLoginFault);
+			}
+			// ------------------
+			
+			// признак того, что идет процесс авторизации
+			private function set loginInProgress(val:Boolean):void
+			{
+				loginPanel.enabled=!val;
+				if(loginPanel.enabled)
+					loginPanel.title="Авторизация";
+				else
+					loginPanel.title="Подождите...";
+			}
+			
+			
+			// успешная авторизация
+			private function onLoginSuccess(e:ServiceEvent):void
+			{
+				loginInProgress=false;
+				this.visible=false;
+				
+			}
+			
+			// ошибка авторизации
+			private function onLoginFault(e:ServiceEvent):void
+			{
+				loginInProgress=false;
+			}
+
+			
+			// провести авторизацию
+			protected function linkbutton1_clickHandler(event:MouseEvent):void
+			{
+				loginInProgress=true;
+				Services.instance.registerUser(txtLogin.text,txtPwd.text);
+			}
+			
+		]]>
+	</mx:Script>
+
+	<mx:Panel id="loginPanel" x="254" y="127" width="302" height="200" layout="absolute" title="Авторизация" cornerRadius="0">
+		<mx:Label x="37" y="30" text="пользователь"/>
+		<mx:LinkButton  x="129" y="126" label="Подключиться" click="linkbutton1_clickHandler(event)" focusEnabled="true"/>
+		<mx:TextInput id="txtLogin" x="125" y="28" width="123" text="user1"/>
+		<mx:Label x="37" y="62" text="пароль"/>
+		<mx:TextInput id="txtPwd" x="125" y="60" width="123" text="user1" displayAsPassword="true"/>
+	</mx:Panel>
+</mx:Canvas>

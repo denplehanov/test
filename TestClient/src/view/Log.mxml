@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:Canvas xmlns:mx="http://www.adobe.com/2006/mxml" width="100%" height="100%"
+		   creationComplete="log_creationCompleteHandler(event)" backgroundAlpha="0.7">
+	
+	<mx:Script>
+		<![CDATA[
+			/*
+			UI элемент для вывода лога обращений к серверу
+			*/
+			
+			import mx.events.FlexEvent;
+			
+			// ------------------
+			public static var instance:Log=null;
+			// ------------------
+			protected function log_creationCompleteHandler(event:FlexEvent):void
+			{
+				instance=this;
+			}
+			// ------------------
+			public function writeLog(message:String):void
+			{
+				txtLog.text+=message+"\n";
+				txtLog.verticalScrollPosition+=1000;
+			}
+			// ------------------
+		]]>
+	</mx:Script>
+	
+	<mx:TextArea id="txtLog" x="0" y="0" width="100%" height="100%" backgroundAlpha="0.7" text="Log" editable="false"/>
+</mx:Canvas>

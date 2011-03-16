@@ -1,0 +1,405 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:Canvas xmlns:mx="http://www.adobe.com/2006/mxml" width="100%" height="100%" 
+		   creationComplete="field_creationCompleteHandler(event)"
+		   horizontalScrollPolicy="off"
+		   verticalScrollPolicy="off"
+		   addedToStage="field_addedToStageHandler(event)"
+		   >
+
+	<mx:Script>
+		<![CDATA[
+			/*
+			UI элемент поля овощей
+			содержит массив UI элементов овощей пользователя
+			предоставляет методы по вызову методов управления овощами
+			реализует логику выделения овоща, перетаскивания его мышью
+			*/
+			import buisness.Services;
+			import buisness.dataObjects.FieldSettings;
+			import buisness.dataObjects.PlantInfo;
+			import buisness.dataObjects.UserPlantInfo;
+			import buisness.events.ServiceEvent;
+			import mx.events.FlexEvent;
+			import org.osmf.layout.AbsoluteLayoutFacet;
+			import utils.ExceptionManager;
+			
+			// ------------------------------
+			public static var instance:Field=null;
+			
+			public var fieldSettings:FieldSettings; 
+			public var dragPlant:Plant=null;
+			public var userPlants:Array=new Array();
+
+			// ------------------------------
+			private var _selectedPlant:Plant=null;
+			private var _loader:Loader;
+			private var _orgX:Number;
+			private var _orgY:Number;
+			private var _orgHScrollPosition:Number;
+			private var _orgVScrollPosition:Number;
+			private var _isCanvasDrag:Boolean=false;
+			
+			private var _maxIsoX:int=6;
+			private var _maxIsoY:int=6;
+
+			private var _fieldX:int=170;
+			private var _fieldY:int=440;
+			private var _cellWidth:int=100;
+			private var _cellHeight:int=100;
+
+			// установка GUI обработчиков
+			protected function field_addedToStageHandler(event:Event):void
+			{
+				this.addEventListener(MouseEvent.MOUSE_MOVE,scrollBackground);
+				this.stage.addEventListener(MouseEvent.MOUSE_MOVE,mouseMoveHandler);
+				this.stage.addEventListener(MouseEvent.MOUSE_UP,mouseUpHandler);
+				this.stage.addEventListener(Event.MOUSE_LEAVE,mouseLeaveHandler);
+				this.stage.addEventListener(FocusEvent.FOCUS_OUT,mouseLeaveHandler);
+				this.stage.addEventListener(MouseEvent.MOUSE_DOWN,mouseDownHandler);
+			}
+			
+			// установка обработчиков событий сервиса
+			protected function field_creationCompleteHandler(event:FlexEvent):void
+			{
+				Field.instance=this;
+				Services.instance.addEventListener(ServiceEvent.LOGIN_SUCCESS,onLogin);
+				Services.instance.addEventListener(ServiceEvent.PLANTS_RECIEVED,onRecievePlants);
+				Services.instance.addEventListener(ServiceEvent.USER_PLANTS_RECIEVED,onUserPlantsRecieved);
+				Services.instance.addEventListener(ServiceEvent.USER_PLANT_ADDED,onCommitAddPlant);
+				Services.instance.addEventListener(ServiceEvent.USER_PLANT_SAVED,onCommitSavePlant);
+				Services.instance.addEventListener(ServiceEvent.USER_PLANT_REMOVED,onCommitRemovePlant);
+				Services.instance.addEventListener(ServiceEvent.USER_PLANTS_GROWED,onUserPlantsGrowed);
+			}
+			
+			// после успешной авторизации запросить список овощей пользователя
+			protected function onLogin(e:ServiceEvent):void
+			{
+				Services.instance.getUserPlants();
+			}
+			// создание UI элементов полученного списка овощей пользователя 
+			protected function onUserPlantsRecieved(e:ServiceEvent):void
+			{
+				for each(var userPlantInfo:UserPlantInfo in e.eventData as Array)
+				{
+					var plant:Plant=new Plant();
+					plant.userPlantInfo=userPlantInfo;
+					userPlants.push(plant);
+					plant.updatePlant();
+					this.addChild(plant);
+					var p:Point=convertToCoord(userPlantInfo.x,userPlantInfo.y);
+					plant.x=p.x;
+					plant.y=p.y;
+				}
+			}
+			// обновление UI элементов списка овощей пользователя после их выращивания 
+			protected function onUserPlantsGrowed(e:ServiceEvent):void
+			{
+				for each(var userPlantInfo:UserPlantInfo in e.eventData as Array)
+				{
+					var plant:Plant=getPlantByUserPlantInfo(userPlantInfo);
+					if(plant==null)continue;
+					
+					plant.userPlantInfo.gRate=userPlantInfo.gRate;
+					plant.userPlantInfo.x=userPlantInfo.x;
+					plant.userPlantInfo.y=userPlantInfo.y;
+					plant.updatePlant();
+				}
+				
+				selectedPlant=selectedPlant;
+			}
+			
+			// загрузка фона после получения общих данных 
+			protected function onRecievePlants(e:ServiceEvent):void
+			{
+				fieldSettings=e.eventData as FieldSettings;
+				_loader = new Loader();
+				_loader.contentLoaderInfo.addEventListener(Event.COMPLETE,onLoadImage);
+				_loader.load(new URLRequest(fieldSettings.backImageSrc));
+				
+			}
+			// -----------------------------
+			private function onLoadImage(e:Event):void
+			{
+				var bitmap:Bitmap=e.currentTarget.content as Bitmap;
+				if(bitmap==null)
+				{
+					ExceptionManager.processException(new Error("error loading back image"));
+					return;
+				}
+				backImage.source = bitmap;
+				backImage.width=bitmap.width;
+				backImage.height=bitmap.height;
+			}
+			
+			// добавление овоща 
+			public function addPlant(plantInfo:PlantInfo):void
+			{
+				// поиск свободного места для добавления
+				var isoX:int=1;
+				var isoY:int=1;
+				while(checkPlantByIso(isoX,isoY))
+				{
+					if(isoY>=_maxIsoY)
+					{
+						isoY=1;
+						isoX++;
+						if(isoX>_maxIsoX)
+						{
+							ExceptionManager.processException(new Error("you have no place for plant"));
+							return;
+						}
+						continue;
+					}
+					isoY++;
+				}
+				var userPlantInfo:UserPlantInfo=new UserPlantInfo(plantInfo);
+				userPlantInfo.isUserChanged=true;
+				userPlantInfo.x=isoX;
+				userPlantInfo.y=isoY;
+				
+				// запрос на сохранение овоща
+				Services.instance.addUserPlant(userPlantInfo);
+				
+			}
+			
+			// удаление овоща 
+			public function removeSelectedPlant():void
+			{
+				// запрос на удаление овоща
+				Services.instance.removeUserPlant(selectedPlant.userPlantInfo);
+				selectedPlant=null;
+			}
+			
+			// после добавления овоща на сервере - создание UI элемента  
+			protected function onCommitAddPlant(e:ServiceEvent):void
+			{
+				var usePlantInfo:UserPlantInfo=e.eventData as UserPlantInfo;
+				var plant:Plant=new Plant();
+				plant.userPlantInfo=usePlantInfo;
+				userPlants.push(plant);
+				plant.updatePlant();
+				this.addChild(plant);
+				var p:Point=convertToCoord(usePlantInfo.x,usePlantInfo.y);
+				plant.x=p.x;
+				plant.y=p.y;
+			}
+			// после сохранения овоща на сервере - обновление UI элемента  
+			protected function onCommitSavePlant(e:ServiceEvent):void
+			{
+				var userPlantInfo:UserPlantInfo=e.eventData as UserPlantInfo;
+				var plant:Plant=getPlantByUserPlantInfo(userPlantInfo);
+				if(plant==null) return;
+			}
+			
+			// после удаления овоща на сервере - удаление UI элемента  
+			protected function onCommitRemovePlant(e:ServiceEvent):void
+			{
+				var userPlantInfo:UserPlantInfo=e.eventData as UserPlantInfo;
+				var plant:Plant=getPlantByUserPlantInfo(userPlantInfo);
+				if(plant==null) return;
+				
+				plant.parent.removeChild(plant);
+				var newPlants:Array=new Array();
+				var i:int=userPlants.length;
+				while(i--)
+				{
+					if(userPlants[i]!=plant)
+						newPlants.push(userPlants[i]);
+				}
+				userPlants=newPlants;
+				
+			}
+			//-----------------------
+			
+			//-----------------------
+			//-- перетаскивание овоща
+			//-----------------------
+			// 
+			protected function mouseDownHandler(event:MouseEvent):void
+			{
+				_orgX = event.stageX;
+				_orgY = event.stageY;
+				_orgHScrollPosition = this.horizontalScrollPosition;
+				_orgVScrollPosition = this.verticalScrollPosition;
+				_isCanvasDrag=true;
+				
+			}
+			// перетаскивание фонового изображения  
+			protected function scrollBackground(event:MouseEvent):void
+			{
+				if(dragPlant==null && _isCanvasDrag)
+				{
+					this.verticalScrollPosition = _orgVScrollPosition - (event.stageY - _orgY);
+					this.horizontalScrollPosition = _orgHScrollPosition - (event.stageX - _orgX);
+				}
+				
+			}
+			// перетаскивание выделенного овоща  
+			protected function mouseMoveHandler(event:MouseEvent):void
+			{
+				if(dragPlant!=null)
+				{
+					dragPlant.x = (event.stageX - dragPlant.x_offset);
+					dragPlant.y = (event.stageY - dragPlant.y_offset);
+					var p1:Point=convertToIso(dragPlant.x,dragPlant.y);
+					if(!checkBounds(p1)
+						|| checkPlantByIso(p1.x,p1.y,dragPlant))
+						dragPlant.alpha=0.5;
+					else
+						dragPlant.alpha=1;
+					
+				}
+			}
+			// -----------------------  
+			protected function mouseLeaveHandler(event:Event):void
+			{
+				stopDragOperation();
+			}
+			//-----------------------
+			protected function mouseUpHandler(event:MouseEvent):void
+			{
+				stopDragOperation();
+			}
+			// drop выделенного овоща
+			private function stopDragOperation():void
+			{
+				_isCanvasDrag=false;
+				if(dragPlant!=null)
+				{
+					dragPlant.alpha=1;
+					
+					// drop овоща с учетом изометрии
+					var p1:Point=convertToIso(dragPlant.x,dragPlant.y);
+					if(checkPlantByIso(p1.x,p1.y,dragPlant))
+					{
+						p1=dragPlant.beforeDragIsoPoint.clone();
+					}
+					else
+					{
+						p1=keepBounds(p1);
+						if(checkPlantByIso(p1.x,p1.y,dragPlant))						
+							p1=dragPlant.beforeDragIsoPoint.clone();
+					}
+					var p2:Point=convertToCoord(p1.x,p1.y);
+					dragPlant.x=p2.x;
+					dragPlant.y=p2.y;
+					
+					// запрос на сохранение овоща
+					if(dragPlant.userPlantInfo.x!=p1.x
+						|| dragPlant.userPlantInfo.y!=p1.y)
+					{
+						dragPlant.userPlantInfo.x=p1.x;
+						dragPlant.userPlantInfo.y=p1.y;
+						dragPlant.userPlantInfo.isUserChanged=true;
+						Services.instance.saveUserPlant(dragPlant.userPlantInfo);
+					}
+					
+				}
+				dragPlant=null;
+			}
+			// проверки и установки предельных значений для позиционирования элемента
+			private function keepBounds(p:Point):Point
+			{
+				if(p.x>_maxIsoX) p.x=_maxIsoX;
+				if(p.x<1) p.x=1;
+				if(p.y>_maxIsoX) p.y=_maxIsoY;
+				if(p.y<1) p.y=1;
+				return p; 
+			}
+			//-----------------------
+			private function checkBounds(p:Point):Boolean
+			{
+				if(p.x>_maxIsoX 
+					|| p.x<1
+					|| p.y>_maxIsoX
+					|| p.y<1)
+					return false;
+				
+				return true;
+			}
+			//-----------------------
+			
+			//-----------------------
+			//-- выделение овоща
+			//-----------------------
+			public function get selectedPlant():Plant
+			{
+				return _selectedPlant;
+			}
+			
+			public function set selectedPlant(val:Plant):void
+			{
+				_selectedPlant=val;
+				PlantsToolBar.instance.btnRemove.enabled=(val!=null 
+					&& val.userPlantInfo.gRate>=val.userPlantInfo.plantInfo.maxGrowVal)?true:false;
+			}
+			
+			// вернуть UI элемент овоща по его описанию
+			private function getPlantByUserPlantInfo(userPlantInfo:UserPlantInfo):Plant
+			{
+				var i:int=userPlants.length;
+				while(i--)
+				{
+					if(userPlants[i].userPlantInfo.userPlantID==userPlantInfo.userPlantID)
+						 return userPlants[i];
+				}
+				
+				return null;
+			}
+			
+			//-----------------------
+			//-- Изометрические преобоазования
+			// проверка UI элемента по изометрическим координатам
+			public function checkPlantByIso(checkIsoX:int,checkIsoY:int,skeepPlant:Plant=null):Boolean
+			{
+				var i:int=userPlants.length;
+				while(i--)
+				{
+					if(skeepPlant!=null && skeepPlant==userPlants[i])
+						continue;
+					var trgPoint:Point=convertToIso(userPlants[i].x,userPlants[i].y);
+					if(trgPoint.x==checkIsoX && trgPoint.y==checkIsoY)
+						return true;
+				}
+				return false;
+			}
+
+			// преобразовать экранные координаты в изометрические
+			private var isoPoint:Point=new Point();
+			public  function convertToIso(obx:Number,oby:Number):Point
+			{
+				var _y:Number=((2*(oby-_fieldY)-(obx-_fieldX))/2);
+				var _x:Number=((obx-_fieldX)+_y);
+				isoPoint.y=-Math.round(_y/_cellWidth);
+				isoPoint.x=Math.round(_x/_cellWidth)+2;
+				return isoPoint.clone();
+			}
+			
+			// преобразовать изометрическиекоординаты в экранные  
+			private var coordPoint:Point=new Point();
+			private function convertToCoord(px:Number,py:Number):Point
+			{
+				px-=2;
+				coordPoint.x = px+py;
+				coordPoint.y = (px-py)/2;
+
+				coordPoint.x=Math.round(coordPoint.x*_cellWidth);
+				coordPoint.y=Math.round(coordPoint.y*_cellWidth);
+				
+				coordPoint.x+=_fieldX;
+				coordPoint.y+=_fieldY;
+				
+				return coordPoint.clone();
+			}
+			//-----------------------
+
+		]]>
+	</mx:Script>
+	
+	<mx:Image id="backImage" 
+			  x="0" y="0" width="100%" height="100%" 
+			  scaleContent="false" autoLoad="true" 
+			  focusEnabled="false" mouseEnabled="false"
+			  mouseChildren="true"/>
+	
+</mx:Canvas>

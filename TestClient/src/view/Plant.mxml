@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:Canvas xmlns:mx="http://www.adobe.com/2006/mxml" width="100" height="126"
+		   creationComplete="plant_creationCompleteHandler(event)">
+	
+	<mx:Script>
+		<![CDATA[
+			/*
+			UI элемент для отображения овоща пользователя
+			*/
+			
+			import buisness.dataObjects.FieldSettings;
+			import buisness.dataObjects.UserPlantInfo;
+			
+			import mx.core.Application;
+			import mx.events.FlexEvent;
+			
+			import utils.ExceptionManager;
+
+			// описание овоща пользователя
+			public var userPlantInfo:UserPlantInfo;
+			
+			public var x_offset:Number;
+			public var y_offset:Number;
+			public var beforeDragIsoPoint:Point=new Point();
+
+			// ------------------
+			private var _plantState:String=PlantState.NORMAL;
+			private var _loader:Loader;
+			private var _imageSource:Object;
+
+			// -------------------------------------------------
+			protected function plant_creationCompleteHandler(event:FlexEvent):void
+			{
+				plantImage.source = _imageSource;
+				if(_imageSource is Bitmap)
+					updatePlantBitmap(_imageSource as Bitmap);
+			}
+			
+			// -------------------------------------------------
+			//  обновление изображения согласно степени роста 
+			// -------------------------------------------------
+			public function updatePlant():void
+			{
+				var image:Image=userPlantInfo.plantInfo.getImageByGRate(userPlantInfo.gRate);
+				if(image.source is String)
+				{
+					Log.instance.writeLog("IMAGE get image ("+image.source+")");
+					_loader = new Loader();
+					_loader.contentLoaderInfo.addEventListener(Event.COMPLETE,onLoadImage);
+					_imageSource=image.source as String;
+					_loader.load(new URLRequest(_imageSource as String));
+				}
+				else if(image.source is Bitmap)
+				{
+					updatePlantBitmap(image.source as Bitmap);
+				}
+				
+			}
+			
+			// загрузка изображения овоща
+			private function onLoadImage(e:Event):void
+			{
+				var bitmap:Bitmap=e.currentTarget.content as Bitmap;
+				if(bitmap==null)
+				{
+					ExceptionManager.processException(new Error("error loading plant image"));
+					return;
+				}
+
+				updatePlantBitmap(bitmap);
+				userPlantInfo.plantInfo.getImageByGRate(userPlantInfo.gRate).source=bitmap;
+
+			}
+			// -------------------------------------------------
+			//  обновление bitmap изображения из кэша 
+			// -------------------------------------------------
+			private function updatePlantBitmap(bitmap:Bitmap):void
+			{
+				var bd:BitmapData = new BitmapData(bitmap.width,bitmap.height);
+				bd.copyPixels(bitmap.bitmapData,bitmap.bitmapData.rect,new Point());
+				_imageSource=new Bitmap(bd);
+				if(plantImage!=null)
+				{
+					plantImage.source=_imageSource;
+					plantImage.width=(_imageSource as Bitmap).width;
+					plantImage.height=(_imageSource as Bitmap).height;
+					plantImage.y=this.height-plantImage.height;
+					
+				}
+			}
+			// ---------------------------------------
+			// визуальное оформление согласно статусу 
+			// ----------------------------------------
+			public function get plantState():String
+			{
+				return _plantState;
+			}
+			// ------------------
+			public function set plantState(val:String):void
+			{
+				_plantState=val;
+				switch(_plantState)
+				{
+					case PlantState.NORMAL:
+						this.filters = new Array();
+						break;
+					case PlantState.SELECTED:
+						if(Field.instance.selectedPlant!=null)
+							Field.instance.selectedPlant.plantState=PlantState.NORMAL;
+						
+						if(this.filters.length==0)
+							this.filters = new Array(new GlowFilter(0xd60303));
+						
+						Field.instance.selectedPlant=this;
+						beforeDragIsoPoint=Field.instance.convertToIso(this.x,this.y).clone();
+						Field.instance.dragPlant=this;
+						break;
+				}
+			}
+			// выделение овоща  
+			protected function plantImage_mouseDownHandler(event:MouseEvent):void
+			{
+				x_offset = event.stageX - this.x;
+				y_offset = event.stageY - this.y;
+				plantState=PlantState.SELECTED;
+			}
+			// ------------------
+
+		]]>
+	</mx:Script>
+	<mx:Image id="plantImage"  x="0" y="0" 
+			  height="126" width="100" 
+			  scaleContent="false"
+			  useHandCursor="true"
+			  buttonMode="true"
+			  mouseDown="plantImage_mouseDownHandler(event)"/>
+	
+	
+</mx:Canvas>

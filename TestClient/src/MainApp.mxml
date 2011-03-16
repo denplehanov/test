@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:Application xmlns:mx="http://www.adobe.com/2006/mxml" layout="absolute" 
+				minWidth="800" minHeight="600"
+				width="800" height="600"
+				backgroundColor="0xffffff"
+				xmlns:view="view.*"
+				creationComplete="application_creationCompleteHandler(event)"
+				initialize="application_initializeHandler(event)">
+
+	<mx:Script>
+		<![CDATA[
+			import buisness.Services;
+			
+			import buisness.events.ServiceEvent;
+			
+			import mx.events.FlexEvent;
+			import mx.managers.PopUpManager;
+			
+			import view.Field;
+			import view.Login;
+			import view.PlantsToolBar;
+			
+			protected function application_initializeHandler(event:FlexEvent):void
+			{
+				// создаем точку доступа к сервисам 
+				new Services();
+				// показываем логин
+				PopUpManager.addPopUp(new Login(),this,true);
+			}
+
+			
+			protected function application_creationCompleteHandler(event:FlexEvent):void
+			{
+				// запрашиваем общие данные 
+				Services.instance.getPlants();
+			}
+
+
+
+		]]>	
+	</mx:Script>
+	<view:Field x="0" y="0" width="100%" height="100%"/>
+	<view:PlantsToolBar x="0" y="0" width="100%" height="100"/>
+	<view:Log x="0" y="500" width="100%" height="100"/>
+</mx:Application>

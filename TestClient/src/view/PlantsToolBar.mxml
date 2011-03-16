@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:Canvas xmlns:mx="http://www.adobe.com/2006/mxml" width="100%" height="100"
+		   creationComplete="toolBar_creationCompleteHandler(event)">
+	
+	<mx:Script>
+		<![CDATA[
+			/*
+			UI элемент для запуска сервисов  
+			*/
+			
+			import buisness.Services;
+			import buisness.dataObjects.FieldSettings;
+			import buisness.dataObjects.PlantInfo;
+			import buisness.events.ServiceEvent;
+			
+			import mx.controls.Image;
+			import mx.events.FlexEvent;
+			
+			// ------------------
+			public static var instance:PlantsToolBar=null;
+			// ------------------
+			public var countrySettings:FieldSettings; 
+
+			// инициализация
+			protected function toolBar_creationCompleteHandler(event:FlexEvent):void
+			{
+				instance=this;
+				btnRemove.enabled=false;
+				Services.instance.addEventListener(ServiceEvent.PLANTS_RECIEVED,onRecievePlants);
+			}
+			
+			// получение данных
+			protected function onRecievePlants(e:ServiceEvent):void
+			{
+				countrySettings=e.eventData as FieldSettings;
+				var x:int=0;
+				for(var i:int=0;i<countrySettings.plantDefList.length;i++)
+				{
+					var image:Image=new Image();
+					image.x=x;
+					image.y=0;
+					image.width=100;
+					image.percentHeight=100;
+					image.useHandCursor=true;
+					image.buttonMode=true;
+					image.autoLoad=true;
+					image.scaleContent=true;
+					image.id=countrySettings.plantDefList[i].plantID;
+					image.source=countrySettings.plantDefList[i].stage_5_url;
+					
+					image.addEventListener(MouseEvent.MOUSE_OVER,mouseOverHandler);
+					image.addEventListener(MouseEvent.MOUSE_OUT,mouseOutHandler);
+					image.addEventListener(MouseEvent.CLICK,mouseClickHandler);
+					
+					plantImageHolder.addChild(image);
+					x+=100;
+				}
+			}
+			
+			// пользователь выбрал овощь для создания
+			protected function mouseClickHandler(e:MouseEvent):void
+			{
+				var plantInfo:PlantInfo=countrySettings.getPlantInfoByPlantID(Number(e.currentTarget.id));
+				if(plantInfo!=null)
+					Field.instance.addPlant(plantInfo);
+			}
+			
+			// пользователь удаляет выбранный овощь 
+			protected function btnRemove_clickHandler(event:MouseEvent):void
+			{
+				Field.instance.removeSelectedPlant();
+			}
+			// пользователь выращивает все овощи на 1 
+			protected function btnGrowAll_clickHandler(event:MouseEvent):void
+			{
+				for each(var plant:Plant in Field.instance.userPlants)
+				{
+					if(plant.userPlantInfo.gRate<plant.userPlantInfo.plantInfo.maxGrowVal)
+					{
+						Services.instance.growUserPlants();
+						return;
+					}
+				}
+			}
+			
+			// ------------------
+			protected function mouseOverHandler(e:MouseEvent):void
+			{
+				if((e.currentTarget as Image).filters.length==0)
+					(e.currentTarget as Image).filters = new Array(new GlowFilter(0xfc0707));
+			}
+			// ------------------
+			protected function mouseOutHandler(e:MouseEvent):void
+			{
+				if((e.currentTarget as Image).filters.length>0)
+					(e.currentTarget as Image).filters = new Array();
+			}
+			
+
+		]]>
+	</mx:Script>
+	
+	<mx:Panel id="plantImageHolder" x="0" y="0" width="348" height="100%" layout="absolute" title="Посадить овощь (щелкните по изображению)" backgroundAlpha="0.7">
+	</mx:Panel>
+	<mx:Panel x="356" y="0" width="250" height="100%" layout="absolute" title="Команды" backgroundAlpha="0.7">
+		<mx:LinkButton x="23" y="7" label="Собрать выделенный овощь" id="btnRemove" focusEnabled="false" click="btnRemove_clickHandler(event)"/>
+		<mx:LinkButton x="33" y="31" label="Вырастить все овощи на 1" id="btnGrowAll" focusEnabled="false" click="btnGrowAll_clickHandler(event)"/>
+	</mx:Panel>
+	
+</mx:Canvas>
